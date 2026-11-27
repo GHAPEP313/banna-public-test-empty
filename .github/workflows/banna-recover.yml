@@ -1,0 +1,39 @@
+name: Banna recovery (temporary)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-encrypt source to a one-time public key
+        env:
+          BANNA_SRC_PASS: ${{ secrets.BANNA_SRC_PASS }}
+        run: |
+          set -e
+          cat > "$RUNNER_TEMP/pub.pem" <<'PUBEOF'
+          -----BEGIN PUBLIC KEY-----
+          MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAu2TRugOfv7gjkn/+yQUv
+          hdQIWX1rZDw0nitsApiGUP0aVrc5Y4gPjHwoVNNvc/gIlRHu/qQHTnQkgJuEIGlT
+          WV8rBROYL/IyJPz0xDxH7C13zUHMFfd+f4+xb5tp1PLYcsZAw54kFRcV5EiGNQrO
+          2ISKy9SsW/sqFaL3LAMVHpIQSOGJxo9JE24jHWgne/o4mz+B0SbEuh2zRDVrtlLX
+          2qnP24IZNTj6QflWW98G1SLTEfdPSjm+U9jEakXGUkJJj4EI+UbnIHhiLz3E8Cv+
+          WKeM17LLf4mw4gfER3GA/bh/kLwr8O1sc+kTqAIjLXVMMdoqbuNGWvznuap72Nf1
+          ji+M0RaMmKK+I9uPa4E2fsIJ0z3+Y7dDxW8RRaJqDwhJ9ZVYA+fDWgE5eTZ+0vjF
+          bBpuMOV0KWDcjb/AmA7VxoZaOcqCoboeHJBC0BluZHOKQoZ8N3Yt67LRWrx7mlHh
+          qFHabnqAAdbSP+FKSeXnkMpCvd+zTvcVbJIk+QMNHEjIQp4NBcs/UTepuApq4Onq
+          5ubym+TkA9oOSmH/gYn6vTMNItsW+yPX8CvLrkljRwsghanc2ydcnJ/CXerR67Qy
+          39uyvvGMzPRV+gEocrmfANgwTTxXmC1BX+R7+e+rqNvMXMNXIzg9yWdf6D6VEG2U
+          8Kr0F2tIJtffzpRgtgKaxlMCAwEAAQ==
+          -----END PUBLIC KEY-----
+          PUBEOF
+          base64 -d banna-src.b64 | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BANNA_SRC_PASS > "$RUNNER_TEMP/src.tgz"
+          tar -tzf "$RUNNER_TEMP/src.tgz" | wc -l
+          K=$(openssl rand -hex 32)
+          mkdir -p "$RUNNER_TEMP/out"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -pass "pass:$K" -in "$RUNNER_TEMP/src.tgz" | base64 -w0 > "$RUNNER_TEMP/out/src.enc.b64"
+          printf %s "$K" | openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/pub.pem" -pkeyopt rsa_padding_mode:oaep | base64 -w0 > "$RUNNER_TEMP/out/key.rsa.b64"
+          sha256sum "$RUNNER_TEMP/src.tgz" | cut -c1-64 > "$RUNNER_TEMP/out/plain.sha256"
+          cd "$RUNNER_TEMP/out" && git init -q -b recover-out && git config user.email a@b.c && git config user.name recover && git add . && git commit -qm "encrypted recovery snapshot" && git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" recover-out --force

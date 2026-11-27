@@ -1,0 +1,47 @@
+name: Banna publish release 1.1.2
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SRC_RUN: '46073098142'
+      WANT_SIGNER: 1f6c0b239da7ca1e7b6859152d7329f8160b6197a0eb072c167dfed7f9591cff
+      WANT_PKG: com.banna.apkbuilder.v2
+      WANT_CODE: '15'
+      WANT_NAME: 1.1.2
+    steps:
+      - name: Fetch the tested signed APK from the verified build run
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/in"
+          gh run download "$SRC_RUN" --repo "$GITHUB_REPOSITORY" -n banna-wip-signed -D "$RUNNER_TEMP/in"
+          APK=$(ls "$RUNNER_TEMP"/in/*.apk | head -1)
+          cp "$APK" "$RUNNER_TEMP/banna-$WANT_NAME.apk"
+          echo "apk sha256: $(sha256sum "$RUNNER_TEMP/banna-$WANT_NAME.apk" | cut -d' ' -f1)"
+      - name: Verify checksum, signer, package and version
+        run: |
+          set -e
+          F="$RUNNER_TEMP/banna-$WANT_NAME.apk"
+          WANT_APK_SHA=$(sha256sum "$F" | cut -d' ' -f1); echo "WANT_APK_SHA=$WANT_APK_SHA" >> "$GITHUB_ENV"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "$F" > "$RUNNER_TEMP/v.txt"
+          grep "SHA-256 digest" "$RUNNER_TEMP/v.txt" | head -1
+          grep -q "digest: $WANT_SIGNER" "$RUNNER_TEMP/v.txt" || { echo "::error::signer differs"; exit 1; }
+          "$BT/aapt" dump badging "$F" | head -1 | cut -c1-160
+          "$BT/aapt" dump badging "$F" | head -1 | grep -q "name='$WANT_PKG' versionCode='$WANT_CODE' versionName='$WANT_NAME'" || { echo "::error::package or version differs"; exit 1; }
+      - name: Publish the release
+        run: |
+          set -e
+          F="$RUNNER_TEMP/banna-$WANT_NAME.apk"
+          cat > "$RUNNER_TEMP/notes.txt" <<NOTES
+          Banna APK Builder $WANT_NAME ($WANT_CODE)
+
+          banna-update: {"package":"$WANT_PKG","versionCode":$WANT_CODE,"versionName":"$WANT_NAME","sha256":"$WANT_APK_SHA"}
+          NOTES
+          sed -i 's/^          //' "$RUNNER_TEMP/notes.txt"
+          gh release create "v$WANT_NAME" "$F" --repo "$GITHUB_REPOSITORY" --title "Banna $WANT_NAME" --notes-file "$RUNNER_TEMP/notes.txt" --latest

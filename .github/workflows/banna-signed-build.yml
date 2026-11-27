@@ -1,9 +1,6 @@
 name: Banna build (signed)
 on:
   workflow_dispatch:
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,15 +42,3 @@ jobs:
         with:
           name: banna-signed
           path: ${{ runner.temp }}/work/app/build/outputs/apk/release/*.apk
-      - name: Encrypt APK for retrieval
-        env:
-          APK_PASS: ${{ secrets.APK_PASS }}
-        run: |
-          APK=$(ls "${{ runner.temp }}"/work/app/build/outputs/apk/release/*.apk | head -1)
-          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:APK_PASS -in "$APK" | base64 -w0 > "$RUNNER_TEMP/apk.b64"
-          wc -c "$RUNNER_TEMP/apk.b64"
-          cd "$RUNNER_TEMP" && rm -rf out && mkdir out && cd out
-          git init -q -b apk-out && cp ../apk.b64 apk.b64
-          git -c user.name=ci -c user.email=ci@example.invalid add apk.b64
-          git -c user.name=ci -c user.email=ci@example.invalid commit -qm apk
-          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" apk-out

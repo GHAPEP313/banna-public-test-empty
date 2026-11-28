@@ -1,0 +1,15 @@
+name: Banna wip pubkey
+on:
+  workflow_dispatch:
+jobs:
+  pub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print public half only
+        env:
+          WIP_KEY_B64: ${{ secrets.BANNA_WIP_KEY }}
+        run: |
+          echo "$WIP_KEY_B64" | base64 -d > "$RUNNER_TEMP/k.pem"
+          openssl rsa -in "$RUNNER_TEMP/k.pem" -pubout -outform PEM 2>/dev/null | base64 -w0 > "$RUNNER_TEMP/pub.b64"
+          echo "PUBB64START"; cat "$RUNNER_TEMP/pub.b64"; echo; echo "PUBB64END"
+          rm -f "$RUNNER_TEMP/k.pem"

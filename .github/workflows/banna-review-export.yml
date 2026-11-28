@@ -1,6 +1,8 @@
 name: Banna review export
 on:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   export:
     runs-on: ubuntu-latest
@@ -33,8 +35,13 @@ jobs:
           openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -pass file:rk -in review.tgz -out review.enc
           mkdir -p out && cp rk.rsa review.enc out/
           sha256sum review.tgz | cut -d' ' -f1 > out/plain.sha256
-      - uses: actions/upload-artifact@v4
-        with:
-          name: banna-review-enc
-          path: ${{ runner.temp }}/out/*
-          retention-days: 1
+      - name: Push ciphertext to temp branch
+        run: |
+          set -e
+          cd "$RUNNER_TEMP/out"
+          git init -q -b review-out
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add -A
+          git commit -q -m "encrypted review bundle"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" review-out
